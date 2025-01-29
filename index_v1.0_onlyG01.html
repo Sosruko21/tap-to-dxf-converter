@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TAP to DXF Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        #drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+            margin: 20px 0;
+            cursor: pointer;
+        }
+        #drop-zone.dragover {
+            background-color: #f0f0f0;
+            border-color: #666;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>TAP to DXF Converter</h1>
+    <div id="drop-zone">
+        <p>Перетащите .tap файл сюда или кликните для выбора</p>
+        <input type="file" id="file-input" accept=".tap,.txt">
+    </div>
+    <div id="status" class="hidden">Обработка...</div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const status = document.getElementById('status');
+
+        // Обработчики drag-and-drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) handleFile(file);
+        });
+
+        // Основная логика обработки файла
+        async function handleFile(file) {
+            status.classList.remove('hidden');
+            
+            try {
+                const text = await file.text();
+                const dxfContent = convertTAPtoDXF(text);
+                downloadDXF(dxfContent, file.name.replace(/\..+$/, '') + '.dxf');
+            } catch (error) {
+                alert('Ошибка обработки файла: ' + error.message);
+            } finally {
+                status.classList.add('hidden');
+            }
+        }
+
+        // Конвертация TAP в DXF
+        function convertTAPtoDXF(text) {
+            const lines = text.split('\n');
+            let lastX = 0;
+            let lastY = 0;
+            const points = [{x: lastX, y: lastY}];
+
+            const coordRegex = /x([-+]?\d*\.?\d+)|y([-+]?\d*\.?\d+)/gi;
+
+            lines.forEach(line => {
+                let x = lastX;
+                let y = lastY;
+                
+                const matches = [...line.matchAll(coordRegex)];
+                matches.forEach(match => {
+                    if (match[1]) x = parseFloat(match[1]);
+                    if (match[2]) y = parseFloat(match[2]);
+                });
+
+                points.push({x, y});
+                lastX = x;
+                lastY = y;
+            });
+
+            return generateDXF(points);
+        }
+
+        // Генерация DXF
+        function generateDXF(points) {
+            let dxf = `0\nSECTION\n2\nHEADER\n0\nENDSEC\n`;
+            dxf += `0\nSECTION\n2\nENTITIES\n`;
+
+            // Добавляем линии между точками
+            for (let i = 1; i < points.length; i++) {
+                const prev = points[i - 1];
+                const curr = points[i];
+                dxf += `0\nLINE\n8\n0\n`;
+                dxf += `10\n${prev.x}\n20\n${prev.y}\n`;
+                dxf += `11\n${curr.x}\n21\n${curr.y}\n`;
+            }
+
+            dxf += `0\nENDSEC\n0\nEOF\n`;
+            return dxf;
+        }
+
+        // Скачивание файла
+        function downloadDXF(content, filename) {
+            const blob = new Blob([content], {type: 'application/dxf'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>

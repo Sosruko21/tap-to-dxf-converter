@@ -4,7 +4,17 @@
     <meta charset="UTF-8">
     <title>TAP to DXF Converter</title>
     <style>
-        /* Стили остаются прежними */
+        #drop-zone {
+            width: 300px;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            text-align: center;
+            margin: 20px auto;
+            cursor: pointer;
+        }
+        .hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -16,127 +26,158 @@
     <div id="status" class="hidden">Обработка...</div>
 
     <script>
-        // Обработчики событий остаются без изменений
+        document.addEventListener("DOMContentLoaded", () => {
+            const dropZone = document.getElementById("drop-zone");
+            const fileInput = document.getElementById("file-input");
+            const status = document.getElementById("status");
 
-        async function handleFile(file) {
-            status.classList.remove('hidden');
-            try {
-                const text = await file.text();
-                const commands = parseTAP(text);
-                const dxfContent = generateDXF(commands);
-                downloadDXF(dxfContent, file.name.replace(/\..+$/, '') + '.dxf');
-            } catch (error) {
-                alert('Ошибка: ' + error.message);
-            } finally {
-                status.classList.add('hidden');
+            // Drag and Drop обработчики
+            dropZone.addEventListener("dragover", (event) => {
+                event.preventDefault();
+                dropZone.style.borderColor = "blue";
+            });
+
+            dropZone.addEventListener("dragleave", () => {
+                dropZone.style.borderColor = "#ccc";
+            });
+
+            dropZone.addEventListener("drop", (event) => {
+                event.preventDefault();
+                dropZone.style.borderColor = "#ccc";
+                const file = event.dataTransfer.files[0];
+                if (file) {
+                    handleFile(file);
+                }
+            });
+
+            fileInput.addEventListener("change", (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    handleFile(file);
+                }
+            });
+
+            async function handleFile(file) {
+                status.classList.remove("hidden");
+                try {
+                    const text = await file.text();
+                    const commands = parseTAP(text);
+                    const dxfContent = generateDXF(commands);
+                    downloadDXF(dxfContent, file.name.replace(/\..+$/, "") + ".dxf");
+                } catch (error) {
+                    alert("Ошибка: " + error.message);
+                } finally {
+                    status.classList.add("hidden");
+                }
             }
-        }
 
-        function parseTAP(text) {
-            const lines = text.split('\n');
-            const commands = [];
-            let currentState = {
-                x: null,
-                y: null,
-                mode: 'G01',
-                i: null,
-                j: null
-            };
+            function parseTAP(text) {
+                const lines = text.split("\n");
+                const commands = [];
+                let currentState = { x: null, y: null, mode: "G01", i: null, j: null };
 
-            lines.forEach(line => {
-                const newCmd = { ...currentState };
-                
-                // Парсинг G-кода
-                const gMatch = line.match(/G0?([123])/);
-                if (gMatch) {
-                    newCmd.mode = `G0${gMatch[1]}`;
-                    newCmd.i = null;
-                    newCmd.j = null;
-                }
+                lines.forEach((line) => {
+                    const newCmd = { ...currentState };
 
-                // Парсинг координат
-                const coordRegex = /([XYIJ])([-+]?\d*\.?\d*)/g;
-                let match;
-                while ((match = coordRegex.exec(line)) !== null) {
-                    const val = parseFloat(match[2]);
-                    switch(match[1]) {
-                        case 'X': newCmd.x = val; break;
-                        case 'Y': newCmd.y = val; break;
-                        case 'I': newCmd.i = val; break;
-                        case 'J': newCmd.j = val; break;
-                    }
-                }
-
-                // Добавляем команду только если есть изменения
-                if (newCmd.x !== null && newCmd.y !== null) {
-                    commands.push({
-                        type: newCmd.mode,
-                        start: { x: currentState.x, y: currentState.y },
-                        end: { x: newCmd.x, y: newCmd.y },
-                        center: newCmd.i !== null && newCmd.j !== null ? {
-                            x: currentState.x + newCmd.i,
-                            y: currentState.y + newCmd.j
-                        } : null
-                    });
-
-                    // Обновляем текущее состояние
-                    currentState.x = newCmd.x;
-                    currentState.y = newCmd.y;
-                    currentState.mode = newCmd.mode;
-                }
-            });
-
-            return commands;
-        }
-
-        function generateDXF(commands) {
-            let dxf = `0\nSECTION\n2\nHEADER\n0\nENDSEC\n`;
-            dxf += `0\nSECTION\n2\nENTITIES\n`;
-
-            commands.forEach(cmd => {
-                if (!cmd.start.x && !cmd.start.y) return; // Пропускаем первую команду
-
-                if (cmd.type === 'G01') {
-                    // Линейная интерполяция
-                    dxf += `0\nLINE\n8\n0\n`;
-                    dxf += `10\n${cmd.start.x}\n20\n${cmd.start.y}\n`;
-                    dxf += `11\n${cmd.end.x}\n21\n${cmd.end.y}\n`;
-                } else if (cmd.center) {
-                    // Дуга (G02/G03)
-                    const radius = Math.hypot(
-                        cmd.start.x - cmd.center.x,
-                        cmd.start.y - cmd.center.y
-                    );
-
-                    // Расчет углов
-                    let startAngle = Math.atan2(
-                        cmd.start.y - cmd.center.y,
-                        cmd.start.x - cmd.center.x
-                    ) * 180 / Math.PI;
-
-                    let endAngle = Math.atan2(
-                        cmd.end.y - cmd.center.y,
-                        cmd.end.x - cmd.center.x
-                    ) * 180 / Math.PI;
-
-                    // Коррекция направления
-                    if (cmd.type === 'G02') {
-                        // По часовой стрелке: меняем местами углы
-                        [startAngle, endAngle] = [endAngle, startAngle];
+                    // Парсинг G-кода
+                    const gMatch = line.match(/G0?([123])/);
+                    if (gMatch) {
+                        newCmd.mode = `G0${gMatch[1]}`;
+                        newCmd.i = null;
+                        newCmd.j = null;
                     }
 
-                    dxf += `0\nARC\n8\n0\n`;
-                    dxf += `10\n${cmd.center.x}\n20\n${cmd.center.y}\n`;
-                    dxf += `40\n${radius}\n`;
-                    dxf += `50\n${startAngle}\n51\n${endAngle}\n`;
-                }
-            });
+                    // Парсинг координат
+                    const coordRegex = /([XYIJ])([-+]?\d*\.?\d*)/g;
+                    let match;
+                    while ((match = coordRegex.exec(line)) !== null) {
+                        const val = parseFloat(match[2]);
+                        switch (match[1]) {
+                            case "X":
+                                newCmd.x = val;
+                                break;
+                            case "Y":
+                                newCmd.y = val;
+                                break;
+                            case "I":
+                                newCmd.i = val;
+                                break;
+                            case "J":
+                                newCmd.j = val;
+                                break;
+                        }
+                    }
 
-            dxf += `0\nENDSEC\n0\nEOF\n`;
-            return dxf;
-        }
+                    if (newCmd.x !== null && newCmd.y !== null) {
+                        commands.push({
+                            type: newCmd.mode,
+                            start: { x: currentState.x, y: currentState.y },
+                            end: { x: newCmd.x, y: newCmd.y },
+                            center: newCmd.i !== null && newCmd.j !== null ? {
+                                x: currentState.x + newCmd.i,
+                                y: currentState.y + newCmd.j
+                            } : null
+                        });
 
-        // Функция downloadDXF остается без изменений
+                        currentState = newCmd;
+                    }
+                });
+
+                return commands;
+            }
+
+            function generateDXF(commands) {
+                let dxf = "0\nSECTION\n2\nHEADER\n0\nENDSEC\n";
+                dxf += "0\nSECTION\n2\nENTITIES\n";
+
+                commands.forEach((cmd) => {
+                    if (cmd.start.x === null || cmd.start.y === null) return;
+
+                    if (cmd.type === "G01") {
+                        dxf += `0\nLINE\n8\n0\n`;
+                        dxf += `10\n${cmd.start.x}\n20\n${cmd.start.y}\n`;
+                        dxf += `11\n${cmd.end.x}\n21\n${cmd.end.y}\n`;
+                    } else if (cmd.center) {
+                        const radius = Math.hypot(
+                            cmd.start.x - cmd.center.x,
+                            cmd.start.y - cmd.center.y
+                        );
+
+                        let startAngle = Math.atan2(
+                            cmd.start.y - cmd.center.y,
+                            cmd.start.x - cmd.center.x
+                        ) * (180 / Math.PI);
+
+                        let endAngle = Math.atan2(
+                            cmd.end.y - cmd.center.y,
+                            cmd.end.x - cmd.center.x
+                        ) * (180 / Math.PI);
+
+                        if (cmd.type === "G02") {
+                            [startAngle, endAngle] = [endAngle, startAngle];
+                        }
+
+                        dxf += `0\nARC\n8\n0\n`;
+                        dxf += `10\n${cmd.center.x}\n20\n${cmd.center.y}\n`;
+                        dxf += `40\n${radius}\n`;
+                        dxf += `50\n${startAngle}\n51\n${endAngle}\n`;
+                    }
+                });
+
+                dxf += "0\nENDSEC\n0\nEOF\n";
+                return dxf;
+            }
+
+            function downloadDXF(content, filename) {
+                const blob = new Blob([content], { type: "application/dxf" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        });
     </script>
 </body>
 </html>
